@@ -21,7 +21,14 @@ SCALEWAY_API_KEY=...
     Si la clé d'API est liée à un projet, il faut spécifier le project_id avec la variable `SCALEWAY_PROJECT_ID=...`
 </details>
 
-3. Installer toutes les dépendances python avec cette commande dans le terminal, à l'emplacement du projet:
+3. [Optionel] Récupérer une clé d'API grist et ajouter dans le même fichier `.env` la ligne:
+```env
+GRIST_API_KEY=...
+```
+
+avec la clé récupérée
+
+4. Installer toutes les dépendances python avec cette commande dans le terminal, à l'emplacement du projet:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh && uv sync --frozen
