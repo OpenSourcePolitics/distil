@@ -184,7 +184,8 @@ def _(description, previous_question, question):
     """
     llm = LLM(
         embedding_model="qwen3-embedding-8b",
-        generation_model="llama-3.1-8b-instruct",
+        #generation_model="llama-3.1-8b-instruct",
+        generation_model="mistral-small-3.2-24b-instruct-2506",
         emb_template=TEMPLATE,
         emb_args={
             "description": description,
@@ -195,12 +196,6 @@ def _(description, previous_question, question):
     )
     D = llm.emb_dim
     return D, TEMPLATE, llm
-
-
-@app.cell
-def _(rewordings):
-    rewordings
-    return
 
 
 @app.cell
@@ -254,7 +249,7 @@ def _(D, llm, opinions):
     _s = np.sum(_pca.explained_variance_ratio_)
     proj_reword = np.eye(D) - _pca.components_.T @ _pca.components_
     print(f"explains {_s:.2f} of rewording noise")
-    return proj_reword, rewordings
+    return (proj_reword,)
 
 
 @app.cell
@@ -634,8 +629,6 @@ def _():
 def _(
     ancestry,
     compute_coord_2d,
-    dropdown_files,
-    dropdown_survey,
     m,
     matrix_to_df,
     n_regions,
@@ -810,10 +803,10 @@ def _(
         ),
     ).properties(title=f"Analyse de la question:    «{question}»")
 
-    result.save(
-        CURRENT_DIR
-        / f"result/{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
-    )
+    #result.save(
+    #    CURRENT_DIR
+    #    / f"result/{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
+    #)
     result
     return (opinion_data,)
 

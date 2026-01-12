@@ -103,7 +103,7 @@ class LLM:
         messages = [
             {
                 "role": "system",
-                "content": "You are a helpful assistant who only can write JSON output. Follow the format indicated in the <format> tags, without the tag",
+                "content": "You are a helpful assistant who only can write JSON output. Follow the format indicated in the <format> tags. Start by the token: {",
             },
             {"role": "user", "content": prompt.format(input=input, **self.prompt_args)},
         ]
