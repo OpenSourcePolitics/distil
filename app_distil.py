@@ -22,6 +22,7 @@ with app.setup:
     )
     from llm import LLM
     from sklearn import cluster, decomposition, manifold
+    import requests
 
     CURRENT_DIR = Path(__file__).parent
     DATA_DIR = CURRENT_DIR / "data"
@@ -83,13 +84,14 @@ def _(dropdown_files, raw_answers, survey_path):
         label="Description du sondage: ",
     )
     question = raw_answers.columns[1]
+    question_id = None
     previous_question_value = None
     if (survey_path / "questions.json").exists():
         questions = pl.read_json(survey_path / "questions.json")
-        _p = int(dropdown_files.value.stem[2:])
-        question = questions.filter(pl.col("Position") == _p)["Titre"].item()
+        question_id = int(dropdown_files.value.stem[2:])
+        question = questions.filter(pl.col("Position") == question_id)["Titre"].item()
         previous_question_value = (
-            questions.filter(pl.col("Position") == _p - 1)
+            questions.filter(pl.col("Position") == question_id - 1)
             .select(pl.format("{} ({})", pl.col("Titre"), pl.col("Type")))
             .item()
         )
@@ -881,19 +883,65 @@ def _():
 
 
 @app.cell
-def _(regions, topics):
-    region_ids = {
-        f"{i}: {t}": i
-        for (i, t) in topics.join(regions, on="id").select("id", "topic").iter_rows()
-    }
-    dropdown_region = mo.ui.dropdown(
-        region_ids,
-        label="region to export: ",
-        searchable=True,
-        value=list(region_ids.keys())[0],
+def _():
+    grist_doc_area = mo.ui.text(label="Grist document_id: ")
+    grist_export_button = mo.ui.run_button(label="Exporter les données sur ce document Grist")
+    mo.vstack([grist_doc_area, grist_export_button])
+    return grist_doc_area, grist_export_button
+
+
+@app.cell
+def _(grist_doc_area, grist_export_button):
+    mo.stop(not grist_export_button.value)
+    from grist import setup_grist_tables, dump_dataframes
+    doc_id = grist_doc_area.value
+    table_names = setup_grist_tables(doc_id, question_id=10)
+    return doc_id, dump_dataframes, table_names
+
+
+@app.cell
+def _(doc_id, dump_dataframes, regions, table_names, topics):
+    exported_topics = (
+        regions.join(topics, on="id")
+        .with_row_index("topic_id", offset=1)
+        .select(pl.exclude("id"))
     )
-    dropdown_region
-    return (dropdown_region,)
+    dump_dataframes(
+        doc_id,
+        table_names["topics"],
+        exported_topics.select(description="topic", name="topic"),
+    )
+    return (exported_topics,)
+
+
+@app.cell
+def _(
+    doc_id,
+    dump_dataframes,
+    exported_topics,
+    opinion_data,
+    raw_answers,
+    table_names,
+):
+    records_answers = (
+        exported_topics.join(opinion_data, on="region")
+        .join(raw_answers, on="answer_id")
+        .group_by(session_token="answer_id", answer=raw_answers.columns[1])
+        .agg(topics=pl.col("topic_id").unique())
+    )
+    dump_dataframes(doc_id, table_names["answers"], records_answers)
+    mo.md("export terminé ✅")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    # Export manuel
+
+    Vous pouvez exporter un échantillon de chaque catégorie si vous en avez besoin:
+    """)
+    return
 
 
 @app.cell
@@ -911,6 +959,22 @@ def _(dropdown_region, opinion_data):
     )
     n_sample_range
     return n_sample_range, selected_region
+
+
+@app.cell
+def _(regions, topics):
+    region_ids = {
+        f"{i}: {t}": i
+        for (i, t) in topics.join(regions, on="id").select("id", "topic").iter_rows()
+    }
+    dropdown_region = mo.ui.dropdown(
+        region_ids,
+        label="region to export: ",
+        searchable=True,
+        value=list(region_ids.keys())[0],
+    )
+    dropdown_region
+    return (dropdown_region,)
 
 
 @app.cell
