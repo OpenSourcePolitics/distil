@@ -1,9 +1,11 @@
+import datetime
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from json.decoder import JSONDecodeError
 from os import environ
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -38,6 +40,7 @@ class LLM:
         temperature: float = 0.3,
         progress_function=lambda x, **kwargs: x,
         n_threads=5,
+        log_path="logs",
     ):
         if "SCALEWAY_PROJECT_ID" in environ:
             project_id = environ["SCALEWAY_PROJECT_ID"]
@@ -55,6 +58,8 @@ class LLM:
         self.progress_function = progress_function
         self.n_threads = n_threads
         self.emb_dim = self.embed_batch(("",)).shape[1]
+        self.log_path = Path(log_path)
+        self.log_path.mkdir(exist_ok=True)
 
     @cache
     def embed_batch(self, inputs: tuple[str]):
@@ -99,7 +104,7 @@ class LLM:
         # raw_matrix = preprocessing.normalize(raw_matrix, "l2")
         return np.vstack(results)
 
-    def ask_json_single(self, prompt: str, input: str):
+    def ask_json_single(self, prompt: str, input: str, log_file=None):
         messages = [
             {
                 "role": "system",
@@ -116,24 +121,33 @@ class LLM:
         )
         out = completion.choices[0].message.content
         assert out is not None
+        decoded = None
         try:
-            r = json.loads(out)
-            return r
+            decoded = json.loads(out)
         except JSONDecodeError:
-            print(out)
-            return None
+            print(f"LLM returned invalid json. See {self.log_path}/{log_file}")
+        if log_file is not None:
+            validation_emoji = "🚫" if decoded is None else "✅"
+            with open(self.log_path / log_file, "a") as f:
+                f.write("\n======= INPUT: =============\n")
+                f.write(input)
+                f.write(f"\n======= RESPONSE ({validation_emoji}): =====\n")
+                f.write(out)
+                f.write("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n")
+        return decoded
 
     def ask_json(self, prompt, inputs: Sequence[str], progress_title=None, timeout=2):
         n = len(inputs) // self.n_threads
         json_outputs = []
+        logfile = datetime.datetime.now().isoformat() + ".txt"
+        with open(self.log_path / logfile, "w") as f:
+            f.write("====== PROMPT: =======")
+            formated_prompt = prompt.format(input="{input}", **self.prompt_args)
+            f.write("\n\t".join(formated_prompt.split("\n")))
         for i in self.progress_function(range(n), title=progress_title):
             with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
                 futures = [
-                    executor.submit(
-                        self.ask_json_single,
-                        prompt,
-                        text,
-                    )
+                    executor.submit(self.ask_json_single, prompt, text, logfile)
                     for text in inputs[self.n_threads * i : self.n_threads * (i + 1)]
                 ]
                 time.sleep(timeout)

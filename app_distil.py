@@ -209,6 +209,10 @@ def _(D, llm, opinions):
     {description}
     </context>
 
+    <previous_question>
+    {previous_question}
+    </previous_question>
+
     <question>
     {question}
     </question>
@@ -280,7 +284,7 @@ def _(llm, opinions):
     - la deuxième allant dans le sens opposé
 
 
-    15 mots maximum, et préserve le style original.
+    20 mots maximum, et préserve le style original.
 
     Répond directement au format json
 
