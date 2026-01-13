@@ -26,12 +26,14 @@ with app.setup:
 
     CURRENT_DIR = Path(__file__).parent
     DATA_DIR = CURRENT_DIR / "data"
+    EXPORT_DIR = CURRENT_DIR / "export"
+    EXPORT_DIR.mkdir(exist_ok=True)
 
 
 @app.cell(hide_code=True)
 def _():
     mo.md(rf"""
-    ## Analyse de sondages
+    # Analyse de sondages
 
     Ce script a pour but de créer une visualisation interactive à partir de réponses à un sondage.
 
@@ -158,12 +160,11 @@ def _(description_area, previous_question_area, raw_answers, start_button):
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    ### Embedding
+    ## Représentations vectorielles
 
-    We use an embedding model to create a vector representation of each opinion.
-    This creates a matrix (think of it as a cloud of points) that we use to find trends in the data.
+    Cette partie utilise un petit modèle d'IA (modèle d'embedding) pour créer une représentation mathématique de toutes les opinions.
 
-    To do this, we first add context to the opinion (like a description of the survey), and then call an embedding API.
+    Il est nécessaire d'être connécté à internet pour cette partie.
     """)
     return
 
@@ -395,80 +396,6 @@ def _(
     return (m,)
 
 
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""
-    L'outil va créer une taxonomie d'opinions.
-
-    TODO: move
-
-
-    We will use the following terminology, illustrated by a diagram below:
-    - *Tree*: the information about how groups are nested into each other.
-    - *Opinion* or *Leaf* (<span style="color:lightgreen">green</span> in the diagram).
-    - *Node* (<span style="color:gray">gray</span>  in the diagram): synonym for group. Each node has 2 children, either nodes or opinions.
-    - *Regions* (<span style="color:#E2287B">red</span> in the diagram): special nodes that are chosen to partition all the opinions.
-    - *Taxonomy* (ellipses in the diagram): Regions, and all the nodes above
-
-    We then compute the mean and the deviation (variance times number of samples) for each node.
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.mermaid("""
-    graph LR
-        0([Node 0]):::category
-        1([Node 1]):::category
-
-        subgraph region2["Subtree of region 2"]
-        direction LR
-            2([Node 2]):::region
-            11[Opinion 1]:::opinion
-            12[Opinion 2]:::opinion
-            2 --> 11
-            2 --> 12
-        end
-
-        subgraph region4["Subtree of region 3"]
-        direction LR
-            3([Node 3]):::region
-            13[Opinion 3]:::opinion
-            4[Node 4]
-            17[Opinion 7]:::opinion
-            18[Opinion 8]:::opinion
-            3 --> 13
-            3 --> 4
-            4 --> 17
-            4 --> 18
-        end
-
-        subgraph region3["Subtree of region 4"]
-        direction LR
-            5([Node 5]):::region
-            6[Node 6]
-            16[Opinion 6]:::opinion
-            15[Opinion 5]:::opinion
-            14[Opinion 4]:::opinion
-            5 --> 16
-            5 --> 6
-            6 --> 15
-            6 --> 14
-        end
-
-        0 --> 1
-        0 --> 2
-        1 --> 5
-        1 --> 3
-
-        classDef default fill:#808080,color:#000
-        classDef region stroke:#C2185B,stroke-width:5px
-        classDef opinion fill:#90EE90
-    """)
-    return
-
-
 @app.cell
 def _(m):
     agg = cluster.AgglomerativeClustering(distance_threshold=0, n_clusters=None)
@@ -541,7 +468,7 @@ def _(stats, tree):
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    ## Creating topic names
+    ## Création des noms de catégories
     """)
     return
 
@@ -594,7 +521,9 @@ def _(ancestry, create_friendly_topic_name, opinions, stats):
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    ## Final visualisation
+    ## Visualisation finale
+
+    (La visualisation est exportée dans le dossier `export`)
     """)
     return
 
@@ -635,6 +564,8 @@ def _():
 def _(
     ancestry,
     compute_coord_2d,
+    dropdown_files,
+    dropdown_survey,
     m,
     matrix_to_df,
     n_regions,
@@ -660,7 +591,9 @@ def _(
             pl.col("id"),
             pl.col("region"),
             pl.col("cardinality"),
-            topic_text=pl.format("{}: {}", pl.col("id"), pl.col("topic").fill_null("")),
+            topic_text=pl.format(
+                "{}: {}", pl.col("id"), pl.col("topic").fill_null("")
+            ),
             parent=pl.col("parent"),
             is_region=pl.col("region").is_not_null(),
         )
@@ -730,7 +663,9 @@ def _(
             alt.Tooltip(["topic_text:N", "cardinality:Q"]),
             opacity=alt.condition(select, alt.value(1), alt.value(0.3)),
             color="region:N",
-            shape=alt.condition(alt.datum.is_region, "region:N", alt.value("square")),
+            shape=alt.condition(
+                alt.datum.is_region, "region:N", alt.value("square")
+            ),
         )
         .add_params(select),
         alt.Chart(tree_data)
@@ -809,10 +744,10 @@ def _(
         ),
     ).properties(title=f"Analyse de la question:    «{question}»")
 
-    #result.save(
-    #    CURRENT_DIR
-    #    / f"result/{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
-    #)
+    result.save(
+        EXPORT_DIR
+        / f"{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
+    )
     result
     return (opinion_data,)
 
@@ -820,7 +755,7 @@ def _(
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    ## Compte rendu
+    # Compte rendu et Export
     """)
     return
 
@@ -881,7 +816,7 @@ def _(output_for_llm, previous_question, question):
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    ## Export de données
+    ## Export vers Grist
     """)
     return
 
@@ -941,7 +876,7 @@ def _(
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""
-    # Export manuel
+    ## Export manuel
 
     Vous pouvez exporter un échantillon de chaque catégorie si vous en avez besoin:
     """)
