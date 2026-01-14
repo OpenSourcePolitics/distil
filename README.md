@@ -72,3 +72,5 @@ Si vous voulez importer des données non decidim:
   009019343012, France
   001829184129, Italie
   ```
+  
+  ⚠️ Le nom du fichier CSV est important. Il doit être `q_` + identifiant de la question + `.csv`, par exemple `q_123.csv`

@@ -86,16 +86,20 @@ def _(dropdown_files, raw_answers, survey_path):
         label="Description du sondage: ",
     )
     question = raw_answers.columns[1]
-    question_id = None
+    question_id = int(dropdown_files.value.stem[2:])
     previous_question_value = None
     if (survey_path / "questions.json").exists():
         questions = pl.read_json(survey_path / "questions.json")
-        question_id = int(dropdown_files.value.stem[2:])
-        question = questions.filter(pl.col("Position") == question_id)["Titre"].item()
+        question = questions.filter(pl.col("Position") == question_id)[
+            "Title"
+        ].item()
+        maybe_previous_question = questions.filter(
+            pl.col("Position") == question_id - 1
+        ).select("Title")
         previous_question_value = (
-            questions.filter(pl.col("Position") == question_id - 1)
-            .select(pl.format("{} ({})", pl.col("Titre"), pl.col("Type")))
-            .item()
+            maybe_previous_question.item()
+            if len(maybe_previous_question)
+            else None
         )
     question_area = mo.ui.text_area(
         value=question, label="Question du sondage à analyser"
@@ -117,7 +121,13 @@ def _(dropdown_files, raw_answers, survey_path):
             start_button,
         ]
     )
-    return description_area, previous_question_area, question, start_button
+    return (
+        description_area,
+        previous_question_area,
+        question,
+        question_id,
+        start_button,
+    )
 
 
 @app.function
@@ -830,11 +840,11 @@ def _():
 
 
 @app.cell
-def _(grist_doc_area, grist_export_button):
+def _(grist_doc_area, grist_export_button, question_id):
     mo.stop(not grist_export_button.value)
     from grist import setup_grist_tables, dump_dataframes
     doc_id = grist_doc_area.value
-    table_names = setup_grist_tables(doc_id, question_id=10)
+    table_names = setup_grist_tables(doc_id, question_id=question_id)
     return doc_id, dump_dataframes, table_names
 
 
