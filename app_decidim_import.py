@@ -53,18 +53,25 @@ def _(Literal, Path, json, pl):
             self.source_type = source_type
             self.questions: list[pl.Series] = []
             self.ids = None
-            self.title = None
+            self.form_title = None
+            self._col_answer_id = None
+            self._col_answer_type = None
+            self._col_form_title = None
 
-        def read(self, data):
+        def read(self, df):
             if self.source_type == "Metabase":
-                self.read_metabase(data)
+                self.read_metabase(df)
             elif self.source_type == "Decidim":
-                self.read_decidim(data)
+                self.read_decidim(df)
 
         def write_to_files(self, path: Path):
             path.mkdir(exist_ok=True)
             question_index = [
-                {"Title": q.name, "Position": i, "TextAnswer": q.dtype == pl.String}
+                {
+                    "Title": q.name,
+                    "Position": i,
+                    "TextAnswer": q.dtype == pl.String,
+                }
                 for i, q in enumerate(self.questions, start=1)
             ]
             with open(path / "questions.json", "w") as f:
@@ -74,8 +81,7 @@ def _(Literal, Path, json, pl):
                     exported = pl.DataFrame({"answer_id": self.ids, q.name: q})
                     exported.write_csv(path / f"q_{i}.csv")
 
-        def read_decidim(self, data):
-            raw_df = pl.read_json(data)
+        def read_decidim(self, raw_df):
             self.ids = raw_df[raw_df.columns[0]]
             for c in raw_df.iter_columns():
                 if c.name[0] in "123456789":
@@ -93,26 +99,120 @@ def _(Literal, Path, json, pl):
                             new_q = c_sub.rename(clean_name + " > " + c_sub.name)
                             self.questions.append(new_q)
 
-        def read_metabase(self, data):
-            ...
-            # TODO
+        def read_metabase(self, raw_df):
+            self.form_title = raw_df.select(
+                pl.col(self._col_form_title).unique()
+            ).item()
+            self.ids = raw_df[self._col_answer_id].unique()
+            for (q_title, q_type), group in raw_df.sort(self._col_position).group_by(
+                self._col_question_title,
+                self._col_question_type,
+                maintain_order=True,
+            ):
+                is_open_question = q_type.endswith("answer")
+                agg_expr = (
+                    pl.col(self._col_answer).item()
+                    if is_open_question
+                    else self._col_answer
+                )
+                self.questions.append(
+                    self.ids.to_frame().join(
+                        group.group_by(self._col_answer_id).agg(agg_expr),
+                        on=self._col_answer_id, 
+                        how="left"
+                    )[self._col_answer].rename(q_title)
+                )
     return (FormImporter,)
 
 
 @app.cell
-def _(BytesIO, FormImporter, file_picker, mo):
-    importer = FormImporter("Decidim")
+def _(BytesIO, FormImporter, file_picker, mo, pl, type_picker):
     bytes = BytesIO(file_picker.value[0].contents)
-    importer.read(bytes)
+    df = pl.read_json(bytes, infer_schema_length=1_000_000)
+
+    importer = FormImporter(type_picker.value)
+    column_pickers = {}
+
+    picker_answer_id = mo.ui.dropdown(df.columns, label="session token (or other session id)")
+    picker_question_type = mo.ui.dropdown(df.columns, label="question type")
+    picker_question_title = mo.ui.dropdown(df.columns, label="question title")
+    picker_answer = mo.ui.dropdown(df.columns, label="answer")
+    picker_form_title = mo.ui.dropdown(df.columns, label="form title")
+    picker_position = mo.ui.dropdown(df.columns, label="position")
+    mo.vstack(
+        [
+            picker_answer_id,
+            picker_question_type,
+            picker_question_title,
+            picker_answer,
+            picker_form_title,
+            picker_position,
+        ]
+    ) if type_picker.value == "Metabase" else None
+    return (
+        df,
+        importer,
+        picker_answer,
+        picker_answer_id,
+        picker_form_title,
+        picker_position,
+        picker_question_title,
+        picker_question_type,
+    )
+
+
+@app.cell
+def _(
+    df,
+    importer,
+    mo,
+    picker_answer,
+    picker_answer_id,
+    picker_form_title,
+    picker_position,
+    picker_question_title,
+    picker_question_type,
+    pl,
+    type_picker,
+):
+    if type_picker.value == "Metabase":
+        importer._col_answer_id = picker_answer_id.value
+        importer._col_answer = picker_answer.value
+        importer._col_form_title = picker_form_title.value
+        importer._col_question_type = picker_question_type.value
+        importer._col_question_title = picker_question_title.value
+        importer._col_position = picker_position.value
+        mo.stop(
+            any(
+                x is None
+                for x in [
+                    importer._col_answer_id,
+                    importer._col_answer,
+                    importer._col_form_title,
+                    importer._col_question_title,
+                    importer._col_question_type,
+                    importer._col_position,
+                ]
+            ),
+            output=mo.md("Associer toutes les colonnes pour importer"),
+        )
+
+    importer.read(df)
+    if importer.form_title is None:
+        proposed_title = "mon_super_sondage"
+    else:
+        proposed_title = (
+            pl.Series([importer.form_title])
+            .str.replace_all(r"\W", "_")
+            .item()
+        )
     title_textarea = mo.ui.text_area(
-        label="Nom du questionnaire pour enregistrement :", value=importer.title or ""
+        label="Nom du questionnaire pour enregistrement :",
+        value=proposed_title,
     )
     export_button = mo.ui.run_button(label="Exporter les données")
-    mo.vstack([
-        title_textarea, 
-        export_button
-    ])
-    return export_button, importer, title_textarea
+    mo.vstack([title_textarea, export_button])
+    return export_button, title_textarea
 
 
 @app.cell
@@ -121,69 +221,12 @@ def _(Path, export_button, importer, mo, title_textarea):
     path = Path("data") / title_textarea.value
     importer.write_to_files(path=path)
     mo.md(f"\nDonnées exportées dans `{path}` ✅")
-    return (path,)
+    return
 
 
 @app.cell
 def _(Path, pl, title_textarea):
     pl.read_json(Path("data") / title_textarea.value / "questions.json")
-    return
-
-
-@app.cell
-def _():
-    #M_SESSION_TOKEN = {"fr": "Jeton de session", "en": "Session Token"}
-    #M_ANSWER = {"fr": "Jeton de session", "en": "Session Token"}
-    #M_POSITION = {"fr": "Jeton de session", "en": "Session Token"}
-    #def read_metabase_format(bytes):
-    #    df = pl.read_json(
-    #        schema_overrides={
-    #            "ID de l'utilisateur": pl.String,
-    #            "": pl.String, 
-    #            "Hachage IP": pl.String,
-    #            "Type de question": pl.String,
-    #            "Titre de la question": pl.String, 
-    #            "Réponse": pl.String, 
-    #            "Titre du questionnaire": pl.String, 
-    #            "Position": pl.Int32, 
-    #
-    #            "Decidim User ID": pl.String,
-    #            "": pl.String,
-    #            "IP Hash": pl.String,
-    #            "Question Type": pl.String, 
-    #            "Question Title": pl.String,
-    #            "Answer": pl.String,
-    #            "Position": pl.String,
-    #            "Form Title": pl.String,
-    #        }
-    #    )
-    return
-
-
-@app.cell
-def _(mo, path):
-    # mo.stop(not export_button.value)
-    # path = Path(f"data/{title_textarea.value}")
-    # path.mkdir(parents=True, exist_ok=True)
-    # questions = (
-    #     df.select(
-    #         "Position", Type="Type de question", Titre="Titre de la question"
-    #     )
-    #     .unique()
-    #     .sort("Position")
-    # )
-    # with open(path / "questions.json", "w") as f:
-    #     json.dump(questions.to_dicts(), f, indent=4, ensure_ascii=False)
-    # for (p, q_name), data in df.filter(
-    #     pl.col("Type de question").str.ends_with("answer")
-    # ).group_by("Position", "Titre de la question"):
-    #     print(f"question {p}: {q_name}")
-    #     exported = data.select(
-    #         pl.col("Jeton de session").alias("answer_id"),
-    #         pl.col("Réponse").alias(q_name),
-    #     )
-    #     exported.write_csv(path / f"q_{p}.csv")
-    mo.md(f"\nDonnées exportées dans `{path}` ✅")
     return
 
 
