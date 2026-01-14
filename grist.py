@@ -4,11 +4,10 @@ import grist_api
 from dotenv import load_dotenv
 from polars import DataFrame
 
-doc_id = "x63smxa6Gw5uzcgRuxdVqJ"
 load_dotenv()
 
 
-def get_api(doc_id_: str):
+def get_api(doc_id: str):
     if "GRIST_API_KEY" not in os.environ:
         raise ValueError("provide your `GRIST_API_KEY` in .env")
     return grist_api.GristDocAPI(
