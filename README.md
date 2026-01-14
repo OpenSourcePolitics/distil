@@ -2,6 +2,11 @@
 
 0. Récupérer le code via github
 
+
+```
+git clone https://github.com/OpenSourcePolitics/distil.git
+```
+
 <details>
     <summary>Vous n'arrivez pas à récupérer le code avec `git` ?</summary>
     Il s'agit le plus souvent d'une erreur d'authentification entre votre ordinateur et github. Demandez à n'importe quel profil technique présent près de vous, il saura vous renseigner. Dans le pire des cas, vous pouvez toujours télécharger le code en .zip, et le décomprésser au bon endroit.
