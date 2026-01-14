@@ -433,9 +433,38 @@ def _(ancestry, m, opinions, raw_answers, tree):
 
 @app.cell
 def _(stats, tree):
-    threshold = 17
+    # this threshold has been chosen experimentally on 3 forms, and with a specific model.
+    # it may be unfitted.
+    default_threshold = 17
+
+    MIN_REGIONS = 7
+    MAX_REGIONS = 21
     tree_with_stats = tree.join(stats, on="id")
-    # we find all groups that have a small enough spread, but whose parent have a not small enough spread.
+    proposed_n_cat = tree_with_stats.select(
+        pl.col("spread")
+        .ge(default_threshold)
+        .sum()
+        .clip(MIN_REGIONS, MAX_REGIONS)
+    ).item()
+    slider_n_regions = mo.ui.slider(
+        MIN_REGIONS,
+        MAX_REGIONS,
+        value=proposed_n_cat,
+        show_value=True,
+        debounce=True,
+        label="Nombre de régions d'opinion (catégories): "
+    )
+    slider_n_regions
+    return slider_n_regions, tree_with_stats
+
+
+@app.cell
+def _(slider_n_regions, tree, tree_with_stats):
+    n_regions = slider_n_regions.value
+    threshold = tree_with_stats["spread"].sort(descending=True)[n_regions - 2]
+    # we keep all the nodes whose parent have a spread greater than the threshold, 
+    # and that have themself a spread smaller than the threshold. 
+    # see the docs folder for explanation.
     regions = (
         tree_with_stats.join(
             tree_with_stats, left_on="parent", right_on="id", suffix="_parent"
@@ -443,10 +472,6 @@ def _(stats, tree):
         .filter(pl.col("spread_parent") >= threshold, pl.col("spread") < threshold)
         .select(id=pl.col("id"), region=pl.col("id"))
     )
-    n_regions = len(regions)
-    print(f"{n_regions} regions")
-    mo.stop(n_regions < 7, "🧐 not enough regions. Try with a smaller threshold")
-    mo.stop(n_regions > 21, "💣 too many regions. Try with a greater threshold")
     subtrees, taxonomy = cut_tree(tree, regions["region"])
     return n_regions, regions, taxonomy, threshold
 

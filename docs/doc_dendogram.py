@@ -85,5 +85,114 @@ def _(mo):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Sum Trees and Spread Calculation
+
+    Our dendrogram has a **sum tree** structure for spread (variance) values. A sum tree is a binary tree where each node's value equals the sum of its children's values. In our case, the spread at each internal node is the sum of the spreads of its two children, while leaf nodes (opinions) have their individual spread values.
+
+    ### Region Selection via Threshold
+
+    To select regions, we use a spread threshold. A node becomes a **region** if:
+    1. Its spread is **below** the threshold, AND
+    2. Its parent's spread is **above** the threshold
+
+    This creates a "frontier" that partitions the tree at an appropriate level of granularity.
+
+    #### Example
+
+    Let's say we have this tree:
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.mermaid("""
+    graph TD
+        A["A<br/>spread=100"]
+        B["B<br/>spread=70"]
+        C["C<br/>spread=30"]
+        D["D<br/>spread=40"]
+        E["E<br/>spread=30"]
+        F[Opinion 1]:::opinion
+        G[Opinion 2]:::opinion
+        H[Opinion 3]:::opinion
+        I[Opinion 4]:::opinion
+        J[Opinion 5]:::opinion
+        K[Opinion 6]:::opinion
+
+        A --> B
+        A --> C
+        B --> D
+        B --> E
+        D --> F
+        D --> G
+        E --> H
+        E --> I
+        C --> J
+        C --> K
+
+        classDef opinion fill:#90EE90
+        classDef default fill:#808080,color:#000
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    We want to select a frontier of regions by applying a threshold. A node becomes a region if its spread is below the threshold while its parent's spread is above the threshold.
+
+    With threshold = 50, we get the following regions:
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.mermaid("""
+    graph TD
+        A["A<br/>spread=100"]
+        B["B<br/>spread=70"]
+        C["C<br/>spread=30"]:::region
+        D["D<br/>spread=40"]:::region
+        E["E<br/>spread=30"]:::region
+        F[Opinion 1]:::opinion
+        G[Opinion 2]:::opinion
+        H[Opinion 3]:::opinion
+        I[Opinion 4]:::opinion
+        J[Opinion 5]:::opinion
+        K[Opinion 6]:::opinion
+
+        A --> B
+        A --> C
+        B --> D
+        B --> E
+        D --> F
+        D --> G
+        E --> H
+        E --> I
+        C --> J
+        C --> K
+
+        classDef region stroke:#C2185B,stroke-width:5px,fill:#808080
+        classDef opinion fill:#90EE90
+        classDef default fill:#808080,color:#000
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    Nodes **C**, **D**, and **E** are selected as regions (marked in red) because they're below the threshold while their parents are above.
+
+    Result: Three regions partition all the leaves.
+    """)
+    return
+
+
 if __name__ == "__main__":
     app.run()
