@@ -21,6 +21,7 @@ with app.setup:
         to_nested_dict,
     )
     from llm import LLM
+    from grist import setup_grist_tables, dump_dataframes
     from sklearn import cluster, decomposition, manifold
     import requests
 
@@ -317,25 +318,7 @@ def _(llm, opinions):
     oppositions_data = pl.DataFrame(json_outputs).drop_nulls()
     m_extracted = llm.embed(oppositions_data["opinion"])
     m_inverse = llm.embed(oppositions_data["inverse"])
-    return (
-        json_outputs,
-        m_extracted,
-        m_inverse,
-        opinions_to_inverse,
-        oppositions_data,
-    )
-
-
-@app.cell
-def _(opinions_to_inverse):
-    opinions_to_inverse
-    return
-
-
-@app.cell
-def _(json_outputs):
-    json_outputs
-    return
+    return m_extracted, m_inverse
 
 
 @app.cell
@@ -346,12 +329,6 @@ def _(m_extracted, m_inverse, proj_reword):
     proj_final = proj_reword @ pca.components_.T @ pca.components_
     print(f"explains {_s:.2f} of variance")
     return (proj_final,)
-
-
-@app.cell
-def _(oppositions_data):
-    oppositions_data
-    return
 
 
 @app.function
@@ -451,7 +428,6 @@ def _(ancestry, m, opinions, raw_answers, tree):
             ),
         ),
     ).unnest("values")
-    stats
     return (stats,)
 
 
@@ -842,14 +818,13 @@ def _():
 @app.cell
 def _(grist_doc_area, grist_export_button, question_id):
     mo.stop(not grist_export_button.value)
-    from grist import setup_grist_tables, dump_dataframes
     doc_id = grist_doc_area.value
     table_names = setup_grist_tables(doc_id, question_id=question_id)
-    return doc_id, dump_dataframes, table_names
+    return doc_id, table_names
 
 
 @app.cell
-def _(doc_id, dump_dataframes, regions, table_names, topics):
+def _(doc_id, regions, table_names, topics):
     exported_topics = (
         regions.join(topics, on="id")
         .with_row_index("topic_id", offset=1)
@@ -864,14 +839,7 @@ def _(doc_id, dump_dataframes, regions, table_names, topics):
 
 
 @app.cell
-def _(
-    doc_id,
-    dump_dataframes,
-    exported_topics,
-    opinion_data,
-    raw_answers,
-    table_names,
-):
+def _(doc_id, exported_topics, opinion_data, raw_answers, table_names):
     records_answers = (
         exported_topics.join(opinion_data, on="region")
         .join(raw_answers, on="answer_id")
