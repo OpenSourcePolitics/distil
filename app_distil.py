@@ -499,7 +499,6 @@ def _(m, opinions):
             maybe_concept = next(find_concepts(ids, threshold=0))
             return f"({maybe_concept} ?)"
         return "\n".join(concepts)
-
     return (create_friendly_topic_name,)
 
 
@@ -560,7 +559,6 @@ def _():
                 "value": matrix.flatten(),
             }
         )
-
     return compute_coord_2d, matrix_to_df
 
 
@@ -782,15 +780,21 @@ def _(opinion_data, stats, taxonomy, threshold, topics):
         )
     )
 
-    output_for_llm = json.dumps(
-        to_nested_dict(taxonomy, taxonomy_info), ensure_ascii=False
-    )
+    #output_for_llm = json.dumps(
+    #    to_nested_dict(taxonomy, taxonomy_info), ensure_ascii=False
+    #)
+    return
+
+
+@app.cell
+def _():
+    output_for_llm = "no data"
     return (output_for_llm,)
 
 
 @app.cell
 def _(output_for_llm, previous_question, question):
-    print(f"""
+    llm_prompt = f"""
     Voici le résultat d'une analyse automatique d'un sondage. Créé un rapport structuré, professionnel (évite les emojis), en essayant de respecter la représentativité des opinions.
     Ajoute dans chaque partie des réponses ou extraits de réponse, et indique le nombre de répondants concernées.
     Tu dois évoquer les points de concensus et les points d'opposition.
@@ -808,7 +812,22 @@ def _(output_for_llm, previous_question, question):
     <data>
     {output_for_llm}
     </data>
-    """)
+    """
+    print(llm_prompt)
+    return (llm_prompt,)
+
+
+@app.cell
+def _(llm, llm_prompt):
+    llm_client = mo.ai.llm.openai(
+        base_url=str(llm.client.base_url),
+        api_key=llm.client.api_key,
+        model= "mistral-small-3.2-24b-instruct-2506"
+    )
+    mo.vstack([
+        mo.md("cliquer sur le bouton 💬 en bas à gauche du widget, pour insérer le prompt qui contient toute l'analyse du sondage."),
+        mo.ui.chat(llm_client, prompts=[llm_prompt])
+    ])
     return
 
 
