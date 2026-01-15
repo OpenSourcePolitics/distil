@@ -137,6 +137,15 @@ class LLM:
         return decoded
 
     def ask_json(self, prompt, inputs: Sequence[str], progress_title=None, timeout=2):
+        """
+        Ask the LLM to process a sequence of inputs and return JSON responses.
+        Uses a thread pool to parallelize requests and logs interactions to a file.
+        Args:
+            prompt: the prompt template to use. The argument `{input}` will be replaced with the input.
+            inputs: the list of texts to process
+            progress_title: the title to use for the progress function
+            timeout: time to wait between batches
+        """
         n = len(inputs) // self.n_threads
         json_outputs = []
         logfile = datetime.datetime.now().isoformat() + ".txt"

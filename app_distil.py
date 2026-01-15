@@ -12,6 +12,8 @@ with app.setup:
     import marimo as mo
     import numpy as np
     import polars as pl
+    from sklearn import cluster, decomposition, manifold
+
     from dendogram import (
         compute_depth,
         compute_hierarchy,
@@ -20,10 +22,8 @@ with app.setup:
         dendogram_to_tree,
         to_nested_dict,
     )
+    from grist import dump_dataframes, setup_grist_tables
     from llm import LLM
-    from grist import setup_grist_tables, dump_dataframes
-    from sklearn import cluster, decomposition, manifold
-    import requests
 
     CURRENT_DIR = Path(__file__).parent
     DATA_DIR = CURRENT_DIR / "data"
@@ -33,7 +33,7 @@ with app.setup:
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(rf"""
+    mo.md(r"""
     # Analyse de sondages
 
     Ce script a pour but de créer une visualisation interactive à partir de réponses à un sondage.
@@ -52,7 +52,7 @@ def _():
     surveys = {path.name: path for path in DATA_DIR.glob("*")}
     dropdown_survey = mo.ui.dropdown(
         surveys, value=list(surveys.keys())[0], label="Choix du sondage à analyser: "
-    ) 
+    )
     dropdown_survey
     return (dropdown_survey,)
 
@@ -60,9 +60,7 @@ def _():
 @app.cell
 def _(dropdown_survey):
     survey_path = Path(dropdown_survey.value)
-    question_files = {
-        path.name: path for path in survey_path.glob("*.csv")
-    }
+    question_files = {path.name: path for path in survey_path.glob("*.csv")}
     dropdown_files = mo.ui.dropdown(
         question_files,
         value=list(question_files.keys())[0],
@@ -91,16 +89,12 @@ def _(dropdown_files, raw_answers, survey_path):
     previous_question_value = None
     if (survey_path / "questions.json").exists():
         questions = pl.read_json(survey_path / "questions.json")
-        question = questions.filter(pl.col("Position") == question_id)[
-            "Title"
-        ].item()
+        question = questions.filter(pl.col("Position") == question_id)["Title"].item()
         maybe_previous_question = questions.filter(
             pl.col("Position") == question_id - 1
         ).select("Title")
         previous_question_value = (
-            maybe_previous_question.item()
-            if len(maybe_previous_question)
-            else None
+            maybe_previous_question.item() if len(maybe_previous_question) else None
         )
     question_area = mo.ui.text_area(
         value=question, label="Question du sondage à analyser"
@@ -198,7 +192,7 @@ def _(description, previous_question, question):
     """
     llm = LLM(
         embedding_model="qwen3-embedding-8b",
-        #generation_model="llama-3.1-8b-instruct",
+        # generation_model="llama-3.1-8b-instruct",
         generation_model="mistral-small-3.2-24b-instruct-2506",
         emb_template=TEMPLATE,
         emb_args={
@@ -252,7 +246,7 @@ def _(D, llm, opinions):
         PROMPT_REWORD,
         opinions_to_reword["text"],
         progress_title="Creating rewordings of opinions to calibrate",
-        timeout=2
+        timeout=2,
     )
     rewording_data = (
         pl.from_dicts(rewordings)
@@ -441,10 +435,7 @@ def _(stats, tree):
     MAX_REGIONS = 21
     tree_with_stats = tree.join(stats, on="id")
     proposed_n_cat = tree_with_stats.select(
-        pl.col("spread")
-        .ge(default_threshold)
-        .sum()
-        .clip(MIN_REGIONS, MAX_REGIONS)
+        pl.col("spread").ge(default_threshold).sum().clip(MIN_REGIONS, MAX_REGIONS)
     ).item()
     slider_n_regions = mo.ui.slider(
         MIN_REGIONS,
@@ -452,7 +443,7 @@ def _(stats, tree):
         value=proposed_n_cat,
         show_value=True,
         debounce=True,
-        label="Nombre de régions d'opinion (catégories): "
+        label="Nombre de régions d'opinion (catégories): ",
     )
     slider_n_regions
     return slider_n_regions, tree_with_stats
@@ -462,8 +453,8 @@ def _(stats, tree):
 def _(slider_n_regions, tree, tree_with_stats):
     n_regions = slider_n_regions.value
     threshold = tree_with_stats["spread"].sort(descending=True)[n_regions - 2]
-    # we keep all the nodes whose parent have a spread greater than the threshold, 
-    # and that have themself a spread smaller than the threshold. 
+    # we keep all the nodes whose parent have a spread greater than the threshold,
+    # and that have themself a spread smaller than the threshold.
     # see the docs folder for explanation.
     regions = (
         tree_with_stats.join(
@@ -508,6 +499,7 @@ def _(m, opinions):
             maybe_concept = next(find_concepts(ids, threshold=0))
             return f"({maybe_concept} ?)"
         return "\n".join(concepts)
+
     return (create_friendly_topic_name,)
 
 
@@ -568,6 +560,7 @@ def _():
                 "value": matrix.flatten(),
             }
         )
+
     return compute_coord_2d, matrix_to_df
 
 
@@ -602,9 +595,7 @@ def _(
             pl.col("id"),
             pl.col("region"),
             pl.col("cardinality"),
-            topic_text=pl.format(
-                "{}: {}", pl.col("id"), pl.col("topic").fill_null("")
-            ),
+            topic_text=pl.format("{}: {}", pl.col("id"), pl.col("topic").fill_null("")),
             parent=pl.col("parent"),
             is_region=pl.col("region").is_not_null(),
         )
@@ -651,8 +642,8 @@ def _(
         .with_columns(is_region=pl.col("region").is_not_null())
     )
 
-    x_max = float(layout["x"].max())
-    y_max = float(layout["y"].max())
+    x_max = float(layout["x"].max())  # type: ignore
+    y_max = float(layout["y"].max())  # type: ignore
 
     chart_categories = alt.layer(
         alt.Chart(paths_data)
@@ -674,9 +665,7 @@ def _(
             alt.Tooltip(["topic_text:N", "cardinality:Q"]),
             opacity=alt.condition(select, alt.value(1), alt.value(0.3)),
             color="region:N",
-            shape=alt.condition(
-                alt.datum.is_region, "region:N", alt.value("square")
-            ),
+            shape=alt.condition(alt.datum.is_region, "region:N", alt.value("square")),
         )
         .add_params(select),
         alt.Chart(tree_data)
@@ -756,8 +745,7 @@ def _(
     ).properties(title=f"Analyse de la question:    «{question}»")
 
     result.save(
-        EXPORT_DIR
-        / f"{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
+        EXPORT_DIR / f"{dropdown_survey.value.stem}-{dropdown_files.value.stem}.html"
     )
     result
     return (opinion_data,)
@@ -835,7 +823,9 @@ def _():
 @app.cell
 def _():
     grist_doc_area = mo.ui.text(label="Grist document_id: ")
-    grist_export_button = mo.ui.run_button(label="Exporter les données sur ce document Grist")
+    grist_export_button = mo.ui.run_button(
+        label="Exporter les données sur ce document Grist"
+    )
     mo.vstack([grist_doc_area, grist_export_button])
     return grist_doc_area, grist_export_button
 

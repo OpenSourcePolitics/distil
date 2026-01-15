@@ -3,16 +3,19 @@ import marimo
 __generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
+with app.setup:
+    from typing import Literal
+
 
 @app.cell
 def _():
-    import marimo as mo
-    import polars as pl
+    import json
     from io import BytesIO
     from pathlib import Path
-    from typing import Literal
-    import json
-    return BytesIO, Literal, Path, json, mo, pl
+
+    import marimo as mo
+    import polars as pl
+    return BytesIO, Path, json, mo, pl
 
 
 @app.cell
@@ -47,7 +50,7 @@ def _(mo, type_picker):
 
 
 @app.cell
-def _(Literal, Path, json, pl):
+def _(Path, json, pl):
     class FormImporter:
         def __init__(self, source_type: Literal["Decidim", "Metabase"]):
             self.source_type = source_type
@@ -55,8 +58,11 @@ def _(Literal, Path, json, pl):
             self.ids = None
             self.form_title = None
             self._col_answer_id = None
-            self._col_answer_type = None
             self._col_form_title = None
+            self._col_position = None
+            self._col_question_title = None
+            self._col_question_type = None
+            self._col_answer = None
 
         def read(self, df):
             if self.source_type == "Metabase":
@@ -116,24 +122,28 @@ def _(Literal, Path, json, pl):
                     else self._col_answer
                 )
                 self.questions.append(
-                    self.ids.to_frame().join(
+                    self.ids.to_frame()
+                    .join(
                         group.group_by(self._col_answer_id).agg(agg_expr),
-                        on=self._col_answer_id, 
-                        how="left"
-                    )[self._col_answer].rename(q_title)
+                        on=self._col_answer_id,
+                        how="left",
+                    )[self._col_answer]
+                    .rename(q_title)
                 )
     return (FormImporter,)
 
 
 @app.cell
 def _(BytesIO, FormImporter, file_picker, mo, pl, type_picker):
+    mo.stop(len(file_picker.value) == 0)
     bytes = BytesIO(file_picker.value[0].contents)
     df = pl.read_json(bytes, infer_schema_length=1_000_000)
 
     importer = FormImporter(type_picker.value)
-    column_pickers = {}
 
-    picker_answer_id = mo.ui.dropdown(df.columns, label="session token (or other session id)")
+    picker_answer_id = mo.ui.dropdown(
+        df.columns, label="session token (or other session id)"
+    )
     picker_question_type = mo.ui.dropdown(df.columns, label="question type")
     picker_question_title = mo.ui.dropdown(df.columns, label="question title")
     picker_answer = mo.ui.dropdown(df.columns, label="answer")
@@ -202,9 +212,7 @@ def _(
         proposed_title = "mon_super_sondage"
     else:
         proposed_title = (
-            pl.Series([importer.form_title])
-            .str.replace_all(r"\W", "_")
-            .item()
+            pl.Series([importer.form_title]).str.replace_all(r"\W", "_").item()
         )
     title_textarea = mo.ui.text_area(
         label="Nom du questionnaire pour enregistrement :",
