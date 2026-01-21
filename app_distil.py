@@ -70,11 +70,19 @@ def _(dropdown_survey):
     return dropdown_files, survey_path
 
 
+@app.function
+def remove_pas_de_reponse(df: pl.DataFrame, question_column: str) -> pl.DataFrame:
+    return df.filter(pl.col(question_column).str.strip_chars() != "Pas de réponse")
+
+
 @app.cell
 def _(dropdown_files):
     raw_answers = pl.read_csv(
         dropdown_files.value, schema_overrides={"answer_id": pl.String}
     )
+    question_column = raw_answers.columns[1]
+
+    raw_answers = remove_pas_de_reponse(raw_answers, question_column)
     return (raw_answers,)
 
 
@@ -429,9 +437,9 @@ def _(ancestry, m, opinions, raw_answers, tree):
 def _(stats, tree):
     # this threshold has been chosen experimentally on 3 forms, and with a specific model.
     # it may be unfitted.
-    default_threshold = 17
+    default_threshold = 18
 
-    MIN_REGIONS = 7
+    MIN_REGIONS = 10
     MAX_REGIONS = 21
     tree_with_stats = tree.join(stats, on="id")
     proposed_n_cat = tree_with_stats.select(
@@ -767,7 +775,8 @@ def _():
 
 @app.cell
 def _(opinion_data, stats, taxonomy, threshold, topics):
-    samples_for_llm = opinion_data.group_by("region").agg(pl.col("text").sample(3))
+    # The number of sample initially chosen was 3, testing with 5 for a bigger model.
+    samples_for_llm = opinion_data.group_by("region").agg(pl.col("text").sample(5))
     taxonomy_info = (
         topics.join(taxonomy, on="id")
         .join(stats, on="id")
@@ -780,15 +789,9 @@ def _(opinion_data, stats, taxonomy, threshold, topics):
         )
     )
 
-    #output_for_llm = json.dumps(
-    #    to_nested_dict(taxonomy, taxonomy_info), ensure_ascii=False
-    #)
-    return
-
-
-@app.cell
-def _():
-    output_for_llm = "no data"
+    output_for_llm = json.dumps(
+        to_nested_dict(taxonomy, taxonomy_info), ensure_ascii=False
+    )
     return (output_for_llm,)
 
 
@@ -796,8 +799,9 @@ def _():
 def _(output_for_llm, previous_question, question):
     llm_prompt = f"""
     Voici le résultat d'une analyse automatique d'un sondage. Créé un rapport structuré, professionnel (évite les emojis), en essayant de respecter la représentativité des opinions.
-    Ajoute dans chaque partie des réponses ou extraits de réponse, et indique le nombre de répondants concernées.
-    Tu dois évoquer les points de concensus et les points d'opposition.
+    Ajoute dans chaque partie des réponses ou extraits de réponse, et indique environ le nombre de répondants concernées, arrondi à la dizainne. 
+
+    Tu dois évoquer les points de consensus et les points d'opposition. Cite des exemples pour illustrer des avis, des oppositions ou des consensus à partir des exemples fournis dans chaque catégorie. Présente les thèmes et les exemples de manière structurée et lisible.
 
     Remarques:
     - le champ `typical_opinion` est fourni à titre indicatif. Il peut être trompeur et ne pas refléter l'avis de tout le groupe.
@@ -822,7 +826,7 @@ def _(llm, llm_prompt):
     llm_client = mo.ai.llm.openai(
         base_url=str(llm.client.base_url),
         api_key=llm.client.api_key,
-        model= "mistral-small-3.2-24b-instruct-2506"
+        model= "llama-3.3-70b-instruct"
     )
     mo.vstack([
         mo.md("cliquer sur le bouton 💬 en bas à gauche du widget, pour insérer le prompt qui contient toute l'analyse du sondage."),

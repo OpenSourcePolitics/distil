@@ -110,6 +110,7 @@ def _(Path, json, pl):
                 pl.col(self._col_form_title).unique()
             ).item()
             self.ids = raw_df[self._col_answer_id].unique()
+            raw_df = raw_df.with_columns(pl.col(self._col_position).str.to_integer())
             for (q_title, q_type), group in raw_df.sort(self._col_position).group_by(
                 self._col_question_title,
                 self._col_question_type,
@@ -224,9 +225,17 @@ def _(
 
 
 @app.cell
-def _(Path, export_button, importer, mo, title_textarea):
+def _(Path):
+    CURRENT_DIR = Path(__file__).parent
+    DATA_DIR = CURRENT_DIR / "data"
+    DATA_DIR.mkdir(exist_ok=True)
+    return (DATA_DIR,)
+
+
+@app.cell
+def _(DATA_DIR, export_button, importer, mo, title_textarea):
     mo.stop(not export_button.value)
-    path = Path("data") / title_textarea.value
+    path = DATA_DIR / title_textarea.value
     importer.write_to_files(path=path)
     mo.md(f"\nDonnées exportées dans `{path}` ✅")
     return
