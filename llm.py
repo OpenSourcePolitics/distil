@@ -1,7 +1,7 @@
 import datetime
 import json
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from functools import cache
 from json.decoder import JSONDecodeError
 from os import environ
@@ -136,7 +136,9 @@ class LLM:
                 f.write("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n")
         return decoded
 
-    def ask_json(self, prompt, inputs: Sequence[str], progress_title=None, timeout=2):
+    def ask_json(
+        self, prompt, inputs: Sequence[str], progress_title=None, timeout_warning=2
+    ):
         """
         Ask the LLM to process a sequence of inputs and return JSON responses.
         Uses a thread pool to parallelize requests and logs interactions to a file.
@@ -144,25 +146,32 @@ class LLM:
             prompt: the prompt template to use. The argument `{input}` will be replaced with the input.
             inputs: the list of texts to process
             progress_title: the title to use for the progress function
-            timeout: time to wait between batches
+            timeout_warning: if we need to wait more than this value to get
+                a response form the API, print a warning
         """
-        n = len(inputs) // self.n_threads
         json_outputs = []
         logfile = datetime.datetime.now().isoformat() + ".txt"
         with open(self.log_path / logfile, "w") as f:
             f.write("====== PROMPT: =======")
             formated_prompt = prompt.format(input="{input}", **self.prompt_args)
             f.write("\n\t".join(formated_prompt.split("\n")))
-        for i in self.progress_function(range(n), title=progress_title):
+            
+        for i in self.progress_function(
+            range(0, len(inputs), self.n_threads),
+            title=progress_title,
+            total=len(inputs),
+        ):
             with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
                 futures = [
                     executor.submit(self.ask_json_single, prompt, text, logfile)
-                    for text in inputs[self.n_threads * i : self.n_threads * (i + 1)]
+                    for text in inputs[i : i + self.n_threads]
                 ]
-                time.sleep(timeout)
+                done, not_done = wait(futures, timeout=timeout_warning)
+                if not_done:
+                    print(f"[Warning] API call takes longer than {timeout_warning}s")
                 for future in futures:
                     try:
-                        result = future.result(timeout=0)
+                        result = future.result()
                     except TimeoutError:
                         result = None
                     json_outputs.append(result)

@@ -252,7 +252,6 @@ def _(D, llm, opinions):
         PROMPT_REWORD,
         opinions_to_reword["text"],
         progress_title="Creating rewordings of opinions to calibrate",
-        timeout=2,
     )
     rewording_data = (
         pl.from_dicts(rewordings)
@@ -313,7 +312,6 @@ def _(llm, opinions):
         PROMPT_CHANGE_OPINION,
         opinions_to_inverse["text"],
         progress_title="Creating inverse opinions to calibrate",
-        timeout=2,
     )
     oppositions_data = pl.DataFrame(json_outputs).drop_nulls()
     m_extracted = llm.embed(oppositions_data["opinion"])
