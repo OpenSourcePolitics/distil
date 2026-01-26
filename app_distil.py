@@ -326,7 +326,7 @@ def _(m_extracted, m_inverse, proj_reword):
     pca = decomposition.PCA(15)
     pca.fit((m_extracted - m_inverse) @ proj_reword)
     _s = np.sum(pca.explained_variance_ratio_)
-    proj_final = proj_reword @ pca.components_.T @ pca.components_
+    proj_final = proj_reword @ pca.components_.T @ pca.components_ @ proj_reword.T
     print(f"explains {_s:.2f} of variance")
     return (proj_final,)
 
@@ -379,7 +379,7 @@ def _(
     m_reword = (m_raw - v0) @ proj_reword
 
     m_clean = m_reword + beta * m_reword @ proj_final
-    median_norm = np.median(np.linalg.norm(m_clean, axis=0))
+    median_norm = np.median(np.linalg.norm(m_clean, axis=1))
 
     m = m_clean / median_norm
     return (m,)
@@ -437,7 +437,7 @@ def _(ancestry, m, opinions, raw_answers, tree):
 def _(stats, tree):
     # this threshold has been chosen experimentally on 3 forms, and with a specific model.
     # it may be unfitted.
-    default_threshold = 18
+    default_threshold = 10
 
     MIN_REGIONS = 10
     MAX_REGIONS = 21
