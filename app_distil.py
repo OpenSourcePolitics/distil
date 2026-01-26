@@ -247,7 +247,7 @@ def _(D, llm, opinions):
     </format>
     """
 
-    opinions_to_reword = opinions.filter(pl.col("len") < 100).sample(100)
+    opinions_to_reword = opinions.filter(pl.col("len") < 100).sample(200)
     rewordings = llm.ask_json(
         PROMPT_REWORD,
         opinions_to_reword["text"],
@@ -308,7 +308,7 @@ def _(llm, opinions):
     </format>
     """
 
-    opinions_to_inverse = opinions.filter(pl.col("len") < 100).sample(150)
+    opinions_to_inverse = opinions.filter(pl.col("len") < 100).sample(200)
     json_outputs = llm.ask_json(
         PROMPT_CHANGE_OPINION,
         opinions_to_inverse["text"],
