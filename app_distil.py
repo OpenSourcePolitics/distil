@@ -481,7 +481,7 @@ def _():
 
 
 @app.cell
-def _(llm, opinions):
+def _(ancestry, llm, opinions, taxonomy):
     PROMPT_CREATE_TOPIC = """
     <context>
     {description}
@@ -508,42 +508,37 @@ def _(llm, opinions):
     </format>
     """
 
-    def create_friendly_topic_name_llm(ids):
-        examples = opinions.join(ids.to_frame(), on="id").sample(min(15, len(ids)))[
-            "text"
-        ]
-        topics = llm.ask_json_single(
-            PROMPT_CREATE_TOPIC,
-            "<answer>" + "</answer><answer>".join(examples) + "</answer>",
-        )["statements"]
-        print(topics)
-        return "\n".join(topics)
-
-    return (create_friendly_topic_name_llm,)
-
-
-@app.cell
-def _(ancestry, create_friendly_topic_name_llm, stats, taxonomy):
-    topics = []
-    for (_id,), _data in (
+    # take 10 samples from each group
+    samples_by_group = (
         ancestry.join(taxonomy, left_on="ancestor", right_on="id")
-        .join(stats, left_on="ancestor", right_on="id")
-        .group_by("ancestor")
-    ):
-        topics.append(
-            {
-                "id": _id,
-                "topic": create_friendly_topic_name_llm(_data["id"]),
-            }
+        .join(
+            opinions,
+            on="id",
         )
-    topics = pl.DataFrame(topics)
+        .group_by(id="ancestor")
+        .agg(sample_text=pl.col("text").sample(10, with_replacement=True))
+    )
+    formated_samples = (
+        samples_by_group["sample_text"]
+        .list.eval(pl.format("<answer>{}</answer>", pl.element()))
+        .list.join("\n")
+    )
+
+    # ask llm for a topic name
+    _raw_llm_output = pl.Series(
+        llm.ask_json(
+            PROMPT_CREATE_TOPIC,
+            formated_samples,
+            progress_title="Create topic name for each group",
+        )
+    )
+    topics = pl.DataFrame(
+        {
+            "id": samples_by_group["id"],
+            "topic": _raw_llm_output.struct.field("statements").list.join("\n"),
+        }
+    )
     return (topics,)
-
-
-@app.cell
-def _(taxonomy):
-    taxonomy
-    return
 
 
 @app.cell(hide_code=True)
