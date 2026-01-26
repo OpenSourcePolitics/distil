@@ -361,16 +361,18 @@ def _(
         inputs,
         progress_title="Creating embeddings for all opinions",
     )
+    typical_empty_responses = ["", ".", "-", "N/A", "\n"]
     v0 = llm.embed(
         [
             TEMPLATE.format(
-                text="",
+                text=t,
                 question=question,
                 previous_question=previous_question,
                 description=description,
             )
+            for t in typical_empty_responses
         ],
-    )[0]
+    ).mean(0)
 
     # if beta is bigger, more focus on conflicts of opinion.
     beta = 1
