@@ -361,7 +361,6 @@ def _(
         inputs,
         progress_title="Creating embeddings for all opinions",
     )
-    typical_empty_responses = ["", ".", "-", "N/A", "\n"]
     v0 = llm.embed(
         [
             TEMPLATE.format(
@@ -370,7 +369,7 @@ def _(
                 previous_question=previous_question,
                 description=description,
             )
-            for t in typical_empty_responses
+            for t in ["", ".", "-", "N/A", "\n"]
         ],
     ).mean(0)
 
