@@ -138,20 +138,18 @@ def split_questions_into_opinions(df, question_column):
     """ """
 
     chunks = (
-        (
-            df.select(
-                pl.col("answer_id"),
-                text=pl.col(question_column)
-                .str.replace_all(r"[\.!\n;]", ".")
-                .str.split("."),
-            )
-            .explode("text")
-            .with_columns(
-                pl.col("text").str.strip_chars(),
-                len=pl.col("text").str.strip_chars().str.len_bytes(),
-            )
+        df.select(
+            pl.col("answer_id"),
+            text=pl.col(question_column)
+            .str.replace_all(r"[\.!\n;]", ".")
+            .str.split("."),
         )
-        .filter(pl.col("text").str.len_chars() > 10)
+        .explode("text")
+        .with_columns(
+            pl.col("text").str.strip_chars(),
+            len=pl.col("text").str.strip_chars().str.len_chars(),
+        )
+        .filter(pl.col("len") > 10)
         .with_row_index("id")
     )
 
