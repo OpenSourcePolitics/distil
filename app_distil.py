@@ -484,48 +484,69 @@ def _():
 
 
 @app.cell
-def _(m, opinions):
-    def find_concepts(indices, threshold=5):
-        size_penalty = 1000 / (
-            100 + opinions[indices].select(size=pl.col("text").str.len_chars())["size"]
-        )
+def _(llm, opinions):
+    PROMPT_CREATE_TOPIC = """
+    <context>
+    {description}
+    </context>
 
-        v = m[indices].mean(0)
+    <previous_question>
+    {previous_question}
+    </previous_question>
 
-        for _ in range(2):
-            scores = v.dot(m[indices].T) * size_penalty
-            k = int(np.argmax(scores))
-            if scores[k] < threshold:
-                return
-            yield opinions["text"][int(indices[k])]
-            v_concept = normalize_l2(m[indices][k])
-            v = v - v.dot(v_concept) * v_concept
+    <question>
+    {question}
+    </question>
 
-    def create_friendly_topic_name(ids):
-        concepts = list(find_concepts(ids))
-        if len(concepts) == 0:
-            maybe_concept = next(find_concepts(ids, threshold=0))
-            return f"({maybe_concept} ?)"
-        return "\n".join(concepts)
-    return (create_friendly_topic_name,)
+    {input}
+
+    Rédige deux très courte opinions, représentatives des réponses. 5 mots maximum.
+
+    Répond directement au format json
+
+    <format>
+    {{
+        "statements": []
+    }}
+    </format>
+    """
+
+    def create_friendly_topic_name_llm(ids):
+        examples = opinions.join(ids.to_frame(), on="id").sample(min(15, len(ids)))[
+            "text"
+        ]
+        topics = llm.ask_json_single(
+            PROMPT_CREATE_TOPIC,
+            "<answer>" + "</answer><answer>".join(examples) + "</answer>",
+        )["statements"]
+        print(topics)
+        return "\n".join(topics)
+
+    return (create_friendly_topic_name_llm,)
 
 
 @app.cell
-def _(ancestry, create_friendly_topic_name, opinions, stats):
+def _(ancestry, create_friendly_topic_name_llm, stats, taxonomy):
     topics = []
     for (_id,), _data in (
-        ancestry.join(opinions, on="id")
+        ancestry.join(taxonomy, left_on="ancestor", right_on="id")
         .join(stats, left_on="ancestor", right_on="id")
         .group_by("ancestor")
     ):
         topics.append(
             {
                 "id": _id,
-                "topic": create_friendly_topic_name(_data["id"]),
+                "topic": create_friendly_topic_name_llm(_data["id"]),
             }
         )
     topics = pl.DataFrame(topics)
     return (topics,)
+
+
+@app.cell
+def _(taxonomy):
+    taxonomy
+    return
 
 
 @app.cell(hide_code=True)
@@ -567,6 +588,7 @@ def _():
                 "value": matrix.flatten(),
             }
         )
+
     return compute_coord_2d, matrix_to_df
 
 
@@ -799,7 +821,7 @@ def _(opinion_data, stats, taxonomy, threshold, topics):
 def _(output_for_llm, previous_question, question):
     llm_prompt = f"""
     Voici le résultat d'une analyse automatique d'un sondage. Créé un rapport structuré, professionnel (évite les emojis), en essayant de respecter la représentativité des opinions.
-    Ajoute dans chaque partie des réponses ou extraits de réponse, et indique environ le nombre de répondants concernées, arrondi à la dizainne. 
+    Ajoute dans chaque partie des réponses ou extraits de réponse, et indique environ le nombre de répondants concernées, arrondi à la dizainne.
 
     Tu dois évoquer les points de consensus et les points d'opposition. Cite des exemples pour illustrer des avis, des oppositions ou des consensus à partir des exemples fournis dans chaque catégorie. Présente les thèmes et les exemples de manière structurée et lisible.
 
@@ -826,12 +848,16 @@ def _(llm, llm_prompt):
     llm_client = mo.ai.llm.openai(
         base_url=str(llm.client.base_url),
         api_key=llm.client.api_key,
-        model= "llama-3.3-70b-instruct"
+        model="llama-3.3-70b-instruct",
     )
-    mo.vstack([
-        mo.md("cliquer sur le bouton 💬 en bas à gauche du widget, pour insérer le prompt qui contient toute l'analyse du sondage."),
-        mo.ui.chat(llm_client, prompts=[llm_prompt])
-    ])
+    mo.vstack(
+        [
+            mo.md(
+                "cliquer sur le bouton 💬 en bas à gauche du widget, pour insérer le prompt qui contient toute l'analyse du sondage."
+            ),
+            mo.ui.chat(llm_client, prompts=[llm_prompt]),
+        ]
+    )
     return
 
 
