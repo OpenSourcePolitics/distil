@@ -259,11 +259,18 @@ def _(D, llm, opinions):
         .explode("opinions")
         .drop_nulls()
     )
+    # the goal of this part is to reduce the "rewording noise".
+    # We want to find an orthogonal projection P such that
+    # P embed(text_a) ~= P embed(text_b)
+    # if text_a and text_b have the same content (rewordings)
     m_original = llm.embed(rewording_data["text"])
     m_reworded = llm.embed(rewording_data["opinions"])
     _pca = decomposition.PCA(20)
     _pca.fit(m_original - m_reworded)
     _s = np.sum(_pca.explained_variance_ratio_)
+    # projection on orthogonal subspace of Vect(v - v') vectors,
+    # where v - v' are the difference between the original and reworded embeddings
+    # In practise, we use a PCA to explain ~50% of variance (50% just works)
     proj_reword = np.eye(D) - _pca.components_.T @ _pca.components_
     print(f"explains {_s:.2f} of rewording noise")
     return (proj_reword,)
@@ -321,9 +328,17 @@ def _(llm, opinions):
 
 @app.cell
 def _(m_extracted, m_inverse, proj_reword):
+    # the goal of this part is to increase the "opinion signal".
+    # We want to find a matrix M such that
+    # dist(M v, M v_opp)
+    # is very large if v and v_opps are embeddings of opposite opinions.
     pca = decomposition.PCA(15)
     pca.fit((m_extracted - m_inverse) @ proj_reword)
     _s = np.sum(pca.explained_variance_ratio_)
+    # To do this, we compute the projection on Vect(v-v_opp).
+    # this represents the main axis where the opinion is present.
+    # We will use it in the next section to increase the "opinion" signal.
+    # Note: we remove the rewording noise first.
     proj_final = proj_reword @ pca.components_.T @ pca.components_ @ proj_reword.T
     print(f"explains {_s:.2f} of variance")
     return (proj_final,)
@@ -359,6 +374,7 @@ def _(
         inputs,
         progress_title="Creating embeddings for all opinions",
     )
+    # v0 vector: typical embedding of an empty response
     v0 = llm.embed(
         [
             TEMPLATE.format(
@@ -371,13 +387,19 @@ def _(
         ],
     ).mean(0)
 
+    # computation of the "clean" embeddings.
+    # We remove the "rewording noise" and increase the "opinion signal"
+    # by using the projections define previously.
+    #
     # if beta is bigger, more focus on conflicts of opinion.
     beta = 1
     m_reword = (m_raw - v0) @ proj_reword
 
     m_clean = m_reword + beta * m_reword @ proj_final
-    median_norm = np.median(np.linalg.norm(m_clean, axis=1))
 
+    # normalization: the vector of the median opinion should have norm 1.
+    # a vector with small norm is probably not very insightfull (close to the empty response)
+    median_norm = np.median(np.linalg.norm(m_clean, axis=1))
     m = m_clean / median_norm
     return (m,)
 
@@ -403,15 +425,20 @@ def _(ancestry, m, opinions, raw_answers, tree):
     stat_values = {}
     for (_i,), _g in ancestry.group_by("ancestor"):
         ids = _g["id"]
-        mean_topic = m[ids].mean(0)
         mean = m[ids].mean(0)
-        stat_values[_i] = {
-            "cardinality": _g.join(opinions, on="id")
+        # sum of distances to the mean opinion in the group
+        spread = np.linalg.norm(m[ids] - mean)
+        # number of answers that include this opinion (unique)
+        cardinality = (
+            _g.join(opinions, on="id")
             .join(raw_answers, on="answer_id")
             .select(pl.col("answer_id").unique().count())
-            .item(),
-            "mean": mean_topic,
-            "spread": np.linalg.norm(m[ids] - mean),
+            .item()
+        )
+        stat_values[_i] = {
+            "cardinality": cardinality,
+            "mean": mean,
+            "spread": spread,
         }
 
     stats = tree.select(
@@ -621,6 +648,8 @@ def _(
         )
     )
 
+    # the region that is currently selected by the reader of the chart.
+    # we change the opacity of the markers in all chart depending on it.
     select = alt.selection_point(fields=["region"])
 
     tsne_data = compute_coord_2d(m)
@@ -728,6 +757,8 @@ def _(
         )
     )
 
+    # this chart may be buggy and the code is hard to understand.
+    # But it's not that useful, feel free to delete.
     chart_heatmap = (
         alt.Chart(heatmap_data)
         .mark_rect()
@@ -789,15 +820,27 @@ def _():
 
 @app.cell
 def _(opinion_data, stats, taxonomy, threshold, topics):
-    # The number of sample initially chosen was 3, testing with 5 for a bigger model.
-    samples_for_llm = opinion_data.group_by("region").agg(pl.col("text").sample(5))
+    # if you have a lot of regions, try with a smaller N_SAMPLE.
+    # This might be too much data for your LLM.
+    N_SAMPLES_FOR_LLM = 5
+
+    # if the spread is slightly bigger than the threshold,
+    # the topic name provided still might be relevant.
+    # If it is too big, it's probably not (too generic)
+    threshold_unrelevant_topic_name = 1.5 * threshold
+
+    samples_for_llm = opinion_data.group_by("region").agg(
+        pl.col("text").sample(N_SAMPLES_FOR_LLM)
+    )
     taxonomy_info = (
         topics.join(taxonomy, on="id")
         .join(stats, on="id")
         .join(samples_for_llm, left_on="id", right_on="region", how="left")
         .select(
             id="id",
-            typical_opinion=pl.when(pl.col("spread") < threshold * 1.5).then("topic"),
+            typical_opinion=pl.when(
+                pl.col("spread") < threshold_unrelevant_topic_name
+            ).then("topic"),
             n_answers="cardinality",
             samples="text",
         )
